@@ -1,0 +1,142 @@
+---
+title: "Region-Level Log2 Fold Change Analysis and MA plot "
+author: "Anthony Doherty"
+date: "2025-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+  
+### Load libraries
+```{r, libraries, message=FALSE, warning=FALSE}
+library(dplyr)
+library(GenomicRanges)
+library(ggplot2)
+library(knitr)
+library(ggrepel)
+library(patchwork)
+```
+
+
+### Set working directory
+```{r}
+setwd("~/Initial_5_Day_ACBI1_Cut_And_Run/plots/")
+```
+
+### Load data
+```{r}
+scores_df <- read.table("scores_per_transcript_SS18SSX.txt", header = FALSE, sep = "\t")
+colnames(scores_df) <- c("chr", "start", "end", "DMSO_SS18", "ACBI1_SS18")
+```
+
+### Calculate log2 fold change
+```{r}
+scores_df$log2FC <- log2(scores_df$ACBI1_SS18 / scores_df$DMSO_SS18)
+```
+
+### Remove non-finite values
+```{r}
+scores_df_clean <- scores_df %>%
+  filter(is.finite(DMSO_SS18), is.finite(log2FC))
+```
+
+### Categorize by log2FC
+```{r}
+scores_df_clean$color_group <- with(scores_df_clean, 
+                                    ifelse(log2FC > 1, "red", 
+                                           ifelse(log2FC < -1, "navyblue", "grey")))
+```
+
+### Count and percentages
+```{r}
+counts <- table(scores_df_clean$color_group)
+total <- sum(counts)
+percentages <- round(100 * counts / total, 1)
+
+label_red <- paste0("Red (FC > 2): ", counts["red"], " (", percentages["red"], "%)")
+label_navyblue <- paste0("Navy (FC < -2): ", counts["navyblue"], " (", percentages["navyblue"], "%)")
+label_grey <- paste0("Grey (-2 ≤ FC ≤ 2): ", counts["grey"], " (", percentages["grey"], "%)")
+```
+
+### Top 20 up and down
+```{r}
+top_up <- scores_df_clean %>% arrange(desc(log2FC)) %>% slice_head(n = 20)
+top_down <- scores_df_clean %>% arrange(log2FC) %>% slice_head(n = 20)
+top_regions <- bind_rows(top_up, top_down)
+```
+
+### Set axis limits
+```{r}
+y_min <- -8
+y_max <- 8
+y_breaks <- seq(y_min, y_max, by = 2)
+```
+
+### Scatter plot
+```{r}
+p_scatter <- ggplot(scores_df_clean, aes(x = log10(DMSO_SS18), y = log2FC)) +
+  geom_point(aes(color = color_group), alpha = 0.7, size = 2) +
+  scale_color_manual(values = c("red" = "red", "navyblue" = "navyblue", "grey" = "grey")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.7) +
+  scale_y_continuous(breaks = y_breaks, limits = c(y_min, y_max)) +
+  scale_x_continuous(breaks = seq(0, 2.5, by = 0.5), limits = c(0, 2.5)) +
+  labs(
+    x = expression("Log"[10]*"(DMSO_SS18_Signal)"),
+    y = expression("Log"[2]*" Fold Change (ACBI1/DMSO)"),
+    title = expression(atop("Region-Level Log"[2]*" Fold Change", 
+                            "vs Log"[10]*" SS18 Signal (5-Day ACBI1)"))
+  ) +
+  annotate("text", x = 2.4, y = 4.5, label = label_red, hjust = 1, color = "red", size = 3) +
+  annotate("text", x = 2.4, y = 4.0, label = label_navyblue, hjust = 1, color = "navyblue", size = 3) +
+  annotate("text", x = 2.4, y = 3.5, label = label_grey, hjust = 1, color = "grey30", size = 3) +
+  geom_label_repel(
+    data = top_regions,
+    aes(x = log10(DMSO_SS18), y = log2FC),
+    label = paste0("Region_", seq_len(nrow(top_regions))),
+    size = 3.5,
+    box.padding = 0.3,
+    point.padding = 0.4,
+    max.overlaps = 0,
+    segment.color = "black",
+    label.size = 0.2,
+    label.padding = 0.25
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(size = 13),
+    axis.text.y = element_text(size = 13),
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+### Density plot
+```{r}
+p_density_y <- ggplot(scores_df_clean, aes(x = log2FC)) +
+  geom_density(fill = "green", alpha = 0.5, color = "black", linewidth = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.7) +
+  coord_flip() +
+  scale_x_continuous(breaks = y_breaks, limits = c(y_min, y_max)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.5), limits = c(0, 1)) +
+  labs(x = "Density") +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    plot.margin = margin(l = 0, r = 5),
+    legend.position = "none"
+  )
+```
+
+### Combine scatter and density plots
+```{r, warning=FALSE}
+p_scatter | p_density_y + plot_layout(widths = c(1, 3))
+```
