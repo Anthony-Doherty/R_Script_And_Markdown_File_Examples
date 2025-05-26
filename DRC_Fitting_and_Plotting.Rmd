@@ -1,0 +1,136 @@
+---
+title: "DRC_Fitting_and_Plotting_2_Drugs_as_single_agents"
+author: "Anthony Doherty"
+date: "25_01_2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Load libraries
+```{r, message=FALSE, warning=FALSE}
+# Load libraries
+library(readxl)
+library(tidyverse)
+library(drda)
+library(ggplot2)
+```
+
+### Set working directory
+```{r}
+setwd("~/OneDrive - University of Edinburgh/Brien Lab/Anto/Project_Data/EP300_Project/CTG_Work")
+```
+
+
+### Read in viability data for Drug 1
+```{r}
+viability_data_Drug_1 <- read_excel("CTG_SS_cell_line_Data_March_SW982_ACBI1_&_dCBP.xlsx", 
+                                    sheet = "D3_Processed_Rep2", 
+                                    range = "A69:H78") %>%
+  as.data.frame()
+```
+
+### Read in viability data for Drug 2
+```{r}
+viability_data_Drug_2 <- read_excel("CTG_SS_cell_line_Data_March_SW982_ACBI1_&_dCBP.xlsx", 
+                                    sheet = "D3_Processed_Rep2", 
+                                    range = "J69:Q78") %>%
+  as.data.frame()
+```
+
+### Convert to numeric for Drug 1
+```{r}
+viability_data_Drug_1$Log_conc_uM <- as.numeric(viability_data_Drug_1$Log_conc_uM)
+viability_data_Drug_1$AVE <- as.numeric(viability_data_Drug_1$AVE)
+```
+
+### Fit a 4-parameter logistic model for Drug 1
+```{r}
+dose_response_model_1 <- drda(AVE ~ Log_conc_uM, data = viability_data_Drug_1, mean_function = "logistic4")
+```
+### Generate predictions for smooth curve for Drug 1
+```{r}
+predicted_values_1 <- data.frame(
+  Log_conc_uM = seq(min(viability_data_Drug_1$Log_conc_uM), max(viability_data_Drug_1$Log_conc_uM), length.out = 100)
+)
+predicted_values_1$Viability <- predict(dose_response_model_1, newdata = predicted_values_1)
+```
+
+### Convert to numeric for Drug 2
+```{r}
+viability_data_Drug_2$Log_conc_uM <- as.numeric(viability_data_Drug_2$Log_conc_uM)
+viability_data_Drug_2$AVE <- as.numeric(viability_data_Drug_2$AVE)
+```
+
+### Fit a 4-parameter logistic model for Drug 2
+```{r}
+dose_response_model_2 <- drda(AVE ~ Log_conc_uM, data = viability_data_Drug_2, mean_function = "logistic4")
+```
+### Generate predictions for smooth curve for Drug 2
+```{r}
+predicted_values_2 <- data.frame(
+  Log_conc_uM = seq(min(viability_data_Drug_2$Log_conc_uM), max(viability_data_Drug_2$Log_conc_uM), length.out = 100)
+)
+predicted_values_2$Viability <- predict(dose_response_model_2, newdata = predicted_values_2)
+```
+
+### Combine the datasets and add a Drug column
+```{r}
+viability_data_combined <- bind_rows(
+  mutate(viability_data_Drug_1, Drug = "dCBP"),
+  mutate(viability_data_Drug_2, Drug = "ACBI1")
+)
+```
+
+### Combine predicted values
+```{r}
+predicted_combined <- bind_rows(
+  mutate(predicted_values_1, Drug = "dCBP"),
+  mutate(predicted_values_2, Drug = "ACBI1")
+)
+```
+
+### Define pastel colors for both drugs
+```{r}
+point_color_1 <- "#A6CEE3"  # Soft pastel blue for Drug 1
+point_color_2 <- "#FB8072"  # Soft pastel red for Drug 2
+errorbar_color <- "#FDBF6F"  # Soft pastel orange
+curve_color <- "grey50"  # Neutral grey
+```
+
+### Create the combined plot
+```{r}
+combined_plot <- ggplot(viability_data_combined, aes(x = Log_conc_uM, y = AVE, color = Drug)) +
+  geom_point(size = 4, shape = 21, fill = point_color_1, color = "black", stroke = 1) +
+  geom_errorbar(aes(ymin = AVE - ST.DEV, ymax = AVE + ST.DEV), 
+                width = 0.1, color = errorbar_color, alpha = 0.8, size = 0.9) +
+  geom_line(data = predicted_combined, aes(x = Log_conc_uM, y = Viability, color = Drug), 
+            size = 1.5) +
+  labs(
+    x = "Log (concentration, µM)",
+    y = "Viability (%)",
+    title = "Dose-Response Curves for Both Drugs D9"
+  ) +
+  theme_classic(base_size = 16) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 20, color = "black"),
+    axis.title = element_text(face = "bold", size = 16),
+    axis.text = element_text(size = 14),
+    panel.border = element_rect(color = "black", fill = NA, size = 1.2),
+    panel.grid.major = element_line(color = "gray85", linetype = "dashed"),
+    panel.grid.minor = element_blank()
+  ) +
+  scale_x_continuous(breaks = seq(floor(min(viability_data_combined$Log_conc_uM)), 
+                                  ceiling(max(viability_data_combined$Log_conc_uM)), 
+                                  by = 0.5)) +
+  ylim(0, 150) +
+  scale_color_manual(values = c("ACBI1" = point_color_1, "dCBP" = point_color_2))
+```
+
+### Print the plot
+```{r}
+print(combined_plot)
+```
